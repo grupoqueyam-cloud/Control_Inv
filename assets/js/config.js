@@ -12,5 +12,5 @@ window.APP_CONFIG = Object.freeze({
   MAX_FILE_SIZE_MB: 8,
   REQUEST_TIMEOUT_MS: 120000,
   SESSION_STORAGE_KEY: 'research_control_session_v1',
-  UI_VERSION: '1.0.0'
+  UI_VERSION: '1.1.1'
 });

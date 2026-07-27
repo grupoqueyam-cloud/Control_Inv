@@ -59,7 +59,7 @@
       const timeout = window.setTimeout(() => {
         cleanupWindowListener();
         readyPromise = null;
-        reject(new Error('El puente de Google Apps Script no respondió. Instale el hotfix de Bridge.html y publique una nueva versión de Apps Script.'));
+        reject(new Error('Google Apps Script no respondió. Verifique que Bridge.html y doGet() sean la versión 1.1.1 y publique una nueva versión.'));
       }, 25000);
 
       function cleanupWindowListener() {
