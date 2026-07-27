@@ -5,12 +5,14 @@
   const pending = new Map();
   let bridgeReady = false;
   let bridgeOrigin = null;
+  let bridgePort = null;
   let channel = '';
   let iframe = null;
   let readyPromise = null;
 
   function configured() {
     return Boolean(
+      config &&
       config.BRIDGE_URL &&
       !config.BRIDGE_URL.includes('PEGAR_AQUI') &&
       /^https:\/\//i.test(config.BRIDGE_URL)
@@ -18,6 +20,7 @@
   }
 
   function init() {
+    if (bridgeReady && bridgePort) return Promise.resolve(true);
     if (readyPromise) return readyPromise;
 
     readyPromise = new Promise((resolve, reject) => {
@@ -25,6 +28,8 @@
         reject(new Error('Debe configurar BRIDGE_URL en assets/js/config.js.'));
         return;
       }
+
+      const frontendOrigin = config.GITHUB_ORIGIN || window.location.origin;
 
       try {
         bridgeOrigin = new URL(config.BRIDGE_URL).origin;
@@ -34,10 +39,13 @@
         return;
       }
 
+      iframe = document.getElementById('apps-script-bridge');
+      if (iframe) iframe.remove();
+
       iframe = document.createElement('iframe');
       iframe.id = 'apps-script-bridge';
       const separator = config.BRIDGE_URL.includes('?') ? '&' : '?';
-      iframe.src = `${config.BRIDGE_URL}${separator}channel=${encodeURIComponent(channel)}`;
+      iframe.src = `${config.BRIDGE_URL}${separator}channel=${encodeURIComponent(channel)}&origin=${encodeURIComponent(frontendOrigin)}`;
       iframe.title = 'Puente seguro de Google Apps Script';
       iframe.setAttribute('aria-hidden', 'true');
       iframe.style.position = 'fixed';
@@ -47,41 +55,84 @@
       iframe.style.pointerEvents = 'none';
       iframe.style.border = '0';
       iframe.style.left = '-9999px';
-      document.body.appendChild(iframe);
 
       const timeout = window.setTimeout(() => {
-        if (!bridgeReady) reject(new Error('No se pudo conectar con Google Apps Script. Revise la implementación y los orígenes permitidos.'));
-      }, 20000);
+        cleanupWindowListener();
+        readyPromise = null;
+        reject(new Error('El puente de Google Apps Script no respondió. Instale el hotfix de Bridge.html y publique una nueva versión de Apps Script.'));
+      }, 25000);
 
-      function onReady() {
-        window.clearTimeout(timeout);
-        resolve(true);
+      function cleanupWindowListener() {
+        window.removeEventListener('message', handleWindowMessage);
       }
 
-      window.addEventListener('message', (event) => {
-        if (event.source !== iframe.contentWindow || !isTrustedBridgeOrigin(event.origin) || !event.data || typeof event.data !== 'object' || event.data.channel !== channel) return;
+      function fail(message) {
+        window.clearTimeout(timeout);
+        cleanupWindowListener();
+        readyPromise = null;
+        reject(new Error(message));
+      }
 
-        if (event.data.type === 'bridge-ready') {
-          bridgeReady = true;
-          onReady();
+      function handleWindowMessage(event) {
+        const data = event.data;
+        if (!data || typeof data !== 'object' || data.channel !== channel) return;
+        if (!isTrustedBridgeOrigin(event.origin)) return;
+
+        if (data.type === 'bridge-error') {
+          fail(data.message || 'Google Apps Script rechazó la conexión.');
           return;
         }
 
-        if (event.data.type !== 'bridge-response') return;
-        const item = pending.get(event.data.requestId);
-        if (!item) return;
+        if (data.type !== 'bridge-ready') return;
+        if (!event.ports || !event.ports[0]) {
+          fail('Apps Script respondió, pero no entregó el canal de comunicación. Actualice Bridge.html con el hotfix.');
+          return;
+        }
 
-        window.clearTimeout(item.timeout);
-        pending.delete(event.data.requestId);
+        bridgePort = event.ports[0];
+        bridgePort.onmessage = handlePortMessage;
+        bridgePort.onmessageerror = function () {
+          rejectAllPending(new Error('Se perdió el canal de comunicación con Google Apps Script.'));
+        };
+        if (typeof bridgePort.start === 'function') bridgePort.start();
 
-        if (event.data.ok) item.resolve(event.data.result);
-        else item.reject(normalizeError(event.data.error));
-      });
+        bridgeReady = true;
+        window.clearTimeout(timeout);
+        cleanupWindowListener();
+        resolve(true);
+      }
+
+      window.addEventListener('message', handleWindowMessage);
+      document.body.appendChild(iframe);
     });
 
     return readyPromise;
   }
 
+  function handlePortMessage(event) {
+    const data = event.data;
+    if (!data || typeof data !== 'object' || data.type !== 'bridge-response' || data.channel !== channel) return;
+
+    const item = pending.get(data.requestId);
+    if (!item) return;
+
+    window.clearTimeout(item.timeout);
+    pending.delete(data.requestId);
+
+    if (data.ok) item.resolve(data.result);
+    else item.reject(normalizeError(data.error));
+  }
+
+  function rejectAllPending(error) {
+    pending.forEach((item) => {
+      window.clearTimeout(item.timeout);
+      item.reject(error);
+    });
+    pending.clear();
+    bridgeReady = false;
+    bridgePort = null;
+    readyPromise = null;
+  }
 
   function isTrustedBridgeOrigin(origin) {
     try {
@@ -107,6 +158,8 @@
 
   async function call(action, payload = {}, token = null) {
     await init();
+    if (!bridgePort || !bridgeReady) throw new Error('El puente con Google Apps Script no está disponible.');
+
     const requestId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     return new Promise((resolve, reject) => {
@@ -116,14 +169,21 @@
       }, config.REQUEST_TIMEOUT_MS);
 
       pending.set(requestId, { resolve, reject, timeout });
-      iframe.contentWindow.postMessage({
-        type: 'bridge-request',
-        requestId,
-        action,
-        payload,
-        token,
-        channel
-      }, '*');
+
+      try {
+        bridgePort.postMessage({
+          type: 'bridge-request',
+          requestId,
+          action,
+          payload,
+          token,
+          channel
+        });
+      } catch (error) {
+        window.clearTimeout(timeout);
+        pending.delete(requestId);
+        reject(normalizeError(error));
+      }
     });
   }
 
