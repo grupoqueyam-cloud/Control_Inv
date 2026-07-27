@@ -3,7 +3,7 @@ window.APP_CONFIG = Object.freeze({
   ORGANIZATION: 'Centro de Investigación Sustainability',
 
   // Pegue aquí la URL terminada en /exec de la implementación de Google Apps Script.
-  BRIDGE_URL: 'PEGAR_AQUI_URL_DE_APPS_SCRIPT_EXEC',
+  BRIDGE_URL: 'https://script.google.com/macros/s/AKfycbwPSQm6Z12r5D-3tdndaI3cl6c2iUmas_6FCaPU_GUMSJiBW3AX2XrBYYakczCIPjo/exec',
 
   // Debe coincidir con el origen autorizado configurado en Code.gs.
   // Ejemplo: https://suusuario.github.io
