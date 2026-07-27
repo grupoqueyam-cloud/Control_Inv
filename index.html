@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Sistema de control de investigadores, procesos y documentos vinculados con Google Drive y Google Sheets.">
+  <title>Control de Investigadores</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <section id="setup-screen" class="screen centered hidden">
+    <div class="setup-card">
+      <div class="brand-mark">CI</div>
+      <h1>Configuración pendiente</h1>
+      <p>La interfaz está instalada, pero todavía debe conectarse con el backend de Google Apps Script.</p>
+      <ol>
+        <li>Configure y despliegue los archivos de la carpeta <code>backend</code>.</li>
+        <li>Copie la URL terminada en <code>/exec</code>.</li>
+        <li>Péguela en <code>assets/js/config.js</code>.</li>
+      </ol>
+      <a class="button primary" href="docs/GUIA_INSTALACION.md">Abrir guía de instalación</a>
+    </div>
+  </section>
+
+  <section id="loading-screen" class="screen centered">
+    <div class="loader-card">
+      <div class="spinner"></div>
+      <h1>Conectando con el sistema</h1>
+      <p>Validando Google Apps Script, Sheets y Drive.</p>
+    </div>
+  </section>
+
+  <section id="login-screen" class="screen login-screen hidden">
+    <div class="login-visual">
+      <div class="login-visual-content">
+        <span class="eyebrow">GESTIÓN DE INVESTIGACIÓN</span>
+        <h1>Procesos, documentos y seguimiento en un solo lugar.</h1>
+        <p>Administre investigadores, estados, carpetas, archivos, credenciales y trazabilidad con acceso individual.</p>
+        <div class="feature-grid">
+          <div><strong>Drive</strong><span>Archivos y carpetas</span></div>
+          <div><strong>Sheets</strong><span>Datos centralizados</span></div>
+          <div><strong>Roles</strong><span>Acceso por investigador</span></div>
+          <div><strong>Auditoría</strong><span>Registro de acciones</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="login-panel">
+      <form id="login-form" class="login-card" autocomplete="on">
+        <div class="brand-row">
+          <div class="brand-mark">CI</div>
+          <div>
+            <strong id="login-app-name">Control de Investigadores</strong>
+            <span id="login-organization">Centro de Investigación</span>
+          </div>
+        </div>
+        <div>
+          <h2>Iniciar sesión</h2>
+          <p>Ingrese con la cuenta creada por el administrador.</p>
+        </div>
+        <label>
+          Usuario
+          <input id="login-username" name="username" type="text" required minlength="3" maxlength="80" autocomplete="username" placeholder="ej. eramos">
+        </label>
+        <label>
+          Contraseña
+          <div class="password-field">
+            <input id="login-password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="current-password" placeholder="••••••••">
+            <button class="icon-button" type="button" data-toggle-password="login-password" aria-label="Mostrar u ocultar contraseña">◉</button>
+          </div>
+        </label>
+        <button id="login-button" class="button primary full" type="submit">Ingresar</button>
+        <p class="security-note">Las contraseñas de acceso se validan en Google Apps Script y no se guardan en GitHub Pages.</p>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark small">CI</div>
+        <div>
+          <strong id="app-name">Control de Investigadores</strong>
+          <span id="organization-name">Sustainability</span>
+        </div>
+      </div>
+
+      <nav id="main-nav" class="main-nav" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="dashboard"><span>▦</span> Panel general</button>
+        <button class="nav-item" data-view="processes"><span>▤</span> Procesos</button>
+        <button class="nav-item" data-view="documents"><span>▧</span> Documentos</button>
+        <button class="nav-item" data-view="credentials"><span>⌘</span> Credenciales</button>
+        <button class="nav-item admin-only" data-view="investigators"><span>♙</span> Investigadores</button>
+        <button class="nav-item admin-only" data-view="users"><span>♙</span> Usuarios</button>
+        <button class="nav-item admin-only" data-view="audit"><span>≡</span> Auditoría</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-summary">
+          <div id="user-avatar" class="avatar">U</div>
+          <div>
+            <strong id="sidebar-user-name">Usuario</strong>
+            <span id="sidebar-user-role">Investigador</span>
+          </div>
+        </div>
+        <button id="logout-button" class="button ghost full" type="button">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button id="sidebar-toggle" class="icon-button mobile-only" type="button" aria-label="Abrir menú">☰</button>
+        <div>
+          <h1 id="view-title">Panel general</h1>
+          <p id="view-subtitle">Resumen actualizado de los procesos.</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="refresh-button" class="button secondary" type="button">Actualizar</button>
+          <button id="primary-action-button" class="button primary admin-only" type="button">Nuevo proceso</button>
+        </div>
+      </header>
+
+      <section id="view-container" class="view-container" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <template id="empty-state-template">
+    <div class="empty-state">
+      <div class="empty-icon">□</div>
+      <h3>Sin información disponible</h3>
+      <p>No existen registros para los filtros seleccionados.</p>
+    </div>
+  </template>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

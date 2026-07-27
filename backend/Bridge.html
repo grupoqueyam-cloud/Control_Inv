@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><?= appName ?></title>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+  const allowedOrigins = <?!= allowedOriginsJson ?>;
+  const channel = <?!= JSON.stringify(channel) ?>;
+
+  function allowed(origin) {
+    return allowedOrigins.includes(origin);
+  }
+
+  window.addEventListener('message', function (event) {
+    const data = event.data;
+    if (!allowed(event.origin) || !data || data.type !== 'bridge-request' || data.channel !== channel) return;
+
+    google.script.run
+      .withSuccessHandler(function (envelope) {
+        parent.postMessage({
+          type: 'bridge-response',
+          channel: channel,
+          requestId: data.requestId,
+          ok: Boolean(envelope && envelope.ok),
+          result: envelope && envelope.result,
+          error: envelope && envelope.error
+        }, event.origin);
+      })
+      .withFailureHandler(function (error) {
+        parent.postMessage({
+          type: 'bridge-response',
+          channel: channel,
+          requestId: data.requestId,
+          ok: false,
+          error: { code: 'BRIDGE_ERROR', message: error && error.message ? error.message : 'Error de comunicación con Apps Script.' }
+        }, event.origin);
+      })
+      .bridgeCall({
+        action: data.action,
+        payload: data.payload || {},
+        token: data.token || ''
+      });
+  });
+
+  parent.postMessage({ type: 'bridge-ready', channel: channel }, '*');
+})();
+</script>
+</body>
+</html>
