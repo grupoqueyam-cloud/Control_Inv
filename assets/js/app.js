@@ -53,6 +53,10 @@
       }
       showScreen('login');
     } catch (error) {
+      const title = document.getElementById('setup-title');
+      const message = document.getElementById('setup-message');
+      if (title) title.textContent = 'Error de conexión';
+      if (message) message.textContent = error.message;
       showScreen('setup');
       toast('error', 'No se pudo conectar', error.message);
     }

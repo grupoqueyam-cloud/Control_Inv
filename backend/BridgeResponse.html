@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Respuesta del sistema</title>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+
+  const targetOrigin = <?!= JSON.stringify(targetOrigin) ?>;
+  const bridgeChannel = <?!= JSON.stringify(bridgeChannel) ?>;
+  const requestId = <?!= JSON.stringify(requestId) ?>;
+  const envelope = <?!= JSON.stringify(envelope) ?>;
+
+  const message = {
+    type: 'bridge-response-v3',
+    channel: bridgeChannel,
+    requestId: requestId,
+    ok: Boolean(envelope && envelope.ok),
+    result: envelope && envelope.result,
+    error: envelope && envelope.error,
+    backendVersion: '1.3.0'
+  };
+
+  try {
+    window.top.postMessage(message, targetOrigin || '*');
+  } catch (error) {
+    document.body.textContent =
+      'No fue posible devolver la respuesta a GitHub Pages.';
+  }
+})();
+</script>
+</body>
+</html>

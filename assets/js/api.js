@@ -3,9 +3,19 @@
 
   const config = window.APP_CONFIG;
   const pending = new Map();
-  const channel = `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+  const channel = `${Date.now()}_${cryptoRandom_()}_${cryptoRandom_()}`;
   let initialized = false;
   let initPromise = null;
+
+  function cryptoRandom_() {
+    try {
+      const values = new Uint32Array(4);
+      window.crypto.getRandomValues(values);
+      return Array.from(values, value => value.toString(36)).join('');
+    } catch (error) {
+      return Math.random().toString(36).slice(2);
+    }
+  }
 
   function configured() {
     return Boolean(
@@ -27,6 +37,12 @@
   }
 
   function isTrustedResponseOrigin(origin) {
+    // Apps Script normalmente responde desde script.googleusercontent.com.
+    // Algunos navegadores informan "null" para documentos HTML Service
+    // ejecutados dentro de un iframe sandbox. El canal y requestId aleatorios
+    // siguen impidiendo aceptar respuestas ajenas.
+    if (origin === 'null') return true;
+
     try {
       const url = new URL(origin);
       return url.protocol === 'https:' && (
@@ -44,14 +60,16 @@
     if (!item) return;
 
     window.clearTimeout(item.timeout);
-    if (item.iframe && item.iframe.parentNode) item.iframe.parentNode.removeChild(item.iframe);
+    if (item.iframe && item.iframe.parentNode) {
+      item.iframe.parentNode.removeChild(item.iframe);
+    }
     pending.delete(requestId);
   }
 
   function handleWindowMessage(event) {
     const data = event.data;
     if (!data || typeof data !== 'object') return;
-    if (data.type !== 'bridge-response-v2') return;
+    if (data.type !== 'bridge-response-v3') return;
     if (data.channel !== channel || !data.requestId) return;
     if (!isTrustedResponseOrigin(event.origin)) return;
 
@@ -60,18 +78,23 @@
 
     cleanupRequest(data.requestId);
 
-    if (data.ok) item.resolve(data.result);
-    else item.reject(normalizeError(data.error));
+    if (data.ok) {
+      item.resolve(data.result);
+    } else {
+      item.reject(normalizeError(data.error));
+    }
   }
 
   window.addEventListener('message', handleWindowMessage);
 
   function submitRequest(action, payload, token) {
     if (!configured()) {
-      return Promise.reject(new Error('Debe configurar una URL /exec válida en assets/js/config.js.'));
+      return Promise.reject(
+        new Error('La URL /exec no está configurada correctamente en assets/js/config.js.')
+      );
     }
 
-    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+    const requestId = `${Date.now()}_${cryptoRandom_()}`;
     const frameName = `gas_response_${requestId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
 
     return new Promise((resolve, reject) => {
@@ -92,7 +115,7 @@
       const timeout = window.setTimeout(() => {
         cleanupRequest(requestId);
         reject(new Error(
-          'Google Apps Script no devolvió respuesta. Verifique que doPost(e) y BridgeResponse.html estén publicados, y que la implementación permita acceso a cualquier usuario.'
+          'La URL /exec no ejecutó el backend 1.3.0. Abra la URL /exec directamente y compruebe que muestre "Backend activo", versión 1.3.0 y origin_allowed: true.'
         ));
       }, Number(config.REQUEST_TIMEOUT_MS) || 120000);
 
@@ -113,13 +136,13 @@
         token: token || '',
         requestId: requestId,
         channel: channel,
-        clientVersion: '1.2.0'
+        clientVersion: '1.3.0'
       };
 
       const fields = {
         request: JSON.stringify(request),
         origin: window.location.origin,
-        channel: channel,
+        bridgeChannel: channel,
         requestId: requestId
       };
 
@@ -151,7 +174,7 @@
 
     initPromise = submitRequest('__ping__', {
       origin: window.location.origin,
-      uiVersion: config.UI_VERSION || '1.2.0'
+      uiVersion: config.UI_VERSION || '1.3.0'
     }, '')
       .then((result) => {
         if (!result || result.connected !== true) {
