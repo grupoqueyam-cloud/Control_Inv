@@ -136,7 +136,7 @@
         token: token || '',
         requestId: requestId,
         channel: channel,
-        clientVersion: '1.3.0'
+        clientVersion: '1.3.2'
       };
 
       const fields = {
