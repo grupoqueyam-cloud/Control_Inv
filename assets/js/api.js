@@ -3,142 +3,33 @@
 
   const config = window.APP_CONFIG;
   const pending = new Map();
-  let bridgeReady = false;
-  let bridgeOrigin = null;
-  let bridgePort = null;
-  let channel = '';
-  let iframe = null;
-  let readyPromise = null;
+  const channel = `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+  let initialized = false;
+  let initPromise = null;
 
   function configured() {
     return Boolean(
       config &&
       config.BRIDGE_URL &&
       !config.BRIDGE_URL.includes('PEGAR_AQUI') &&
-      /^https:\/\//i.test(config.BRIDGE_URL)
+      /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/i.test(config.BRIDGE_URL)
     );
   }
 
-  function init() {
-    if (bridgeReady && bridgePort) return Promise.resolve(true);
-    if (readyPromise) return readyPromise;
-
-    readyPromise = new Promise((resolve, reject) => {
-      if (!configured()) {
-        reject(new Error('Debe configurar BRIDGE_URL en assets/js/config.js.'));
-        return;
-      }
-
-      const frontendOrigin = config.GITHUB_ORIGIN || window.location.origin;
-
-      try {
-        bridgeOrigin = new URL(config.BRIDGE_URL).origin;
-        channel = `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
-      } catch (error) {
-        reject(new Error('La URL de Apps Script no es válida.'));
-        return;
-      }
-
-      iframe = document.getElementById('apps-script-bridge');
-      if (iframe) iframe.remove();
-
-      iframe = document.createElement('iframe');
-      iframe.id = 'apps-script-bridge';
-      const separator = config.BRIDGE_URL.includes('?') ? '&' : '?';
-      iframe.src = `${config.BRIDGE_URL}${separator}channel=${encodeURIComponent(channel)}&origin=${encodeURIComponent(frontendOrigin)}`;
-      iframe.title = 'Puente seguro de Google Apps Script';
-      iframe.setAttribute('aria-hidden', 'true');
-      iframe.style.position = 'fixed';
-      iframe.style.width = '1px';
-      iframe.style.height = '1px';
-      iframe.style.opacity = '0';
-      iframe.style.pointerEvents = 'none';
-      iframe.style.border = '0';
-      iframe.style.left = '-9999px';
-
-      const timeout = window.setTimeout(() => {
-        cleanupWindowListener();
-        readyPromise = null;
-        reject(new Error('Google Apps Script no respondió. Verifique que Bridge.html y doGet() sean la versión 1.1.1 y publique una nueva versión.'));
-      }, 25000);
-
-      function cleanupWindowListener() {
-        window.removeEventListener('message', handleWindowMessage);
-      }
-
-      function fail(message) {
-        window.clearTimeout(timeout);
-        cleanupWindowListener();
-        readyPromise = null;
-        reject(new Error(message));
-      }
-
-      function handleWindowMessage(event) {
-        const data = event.data;
-        if (!data || typeof data !== 'object' || data.channel !== channel) return;
-        if (!isTrustedBridgeOrigin(event.origin)) return;
-
-        if (data.type === 'bridge-error') {
-          fail(data.message || 'Google Apps Script rechazó la conexión.');
-          return;
-        }
-
-        if (data.type !== 'bridge-ready') return;
-        if (!event.ports || !event.ports[0]) {
-          fail('Apps Script respondió, pero no entregó el canal de comunicación. Actualice Bridge.html con el hotfix.');
-          return;
-        }
-
-        bridgePort = event.ports[0];
-        bridgePort.onmessage = handlePortMessage;
-        bridgePort.onmessageerror = function () {
-          rejectAllPending(new Error('Se perdió el canal de comunicación con Google Apps Script.'));
-        };
-        if (typeof bridgePort.start === 'function') bridgePort.start();
-
-        bridgeReady = true;
-        window.clearTimeout(timeout);
-        cleanupWindowListener();
-        resolve(true);
-      }
-
-      window.addEventListener('message', handleWindowMessage);
-      document.body.appendChild(iframe);
-    });
-
-    return readyPromise;
+  function normalizeError(error) {
+    if (error instanceof Error) return error;
+    const message = typeof error === 'string'
+      ? error
+      : (error && error.message) || 'Error inesperado del servidor.';
+    const normalized = new Error(message);
+    if (error && error.code) normalized.code = error.code;
+    return normalized;
   }
 
-  function handlePortMessage(event) {
-    const data = event.data;
-    if (!data || typeof data !== 'object' || data.type !== 'bridge-response' || data.channel !== channel) return;
-
-    const item = pending.get(data.requestId);
-    if (!item) return;
-
-    window.clearTimeout(item.timeout);
-    pending.delete(data.requestId);
-
-    if (data.ok) item.resolve(data.result);
-    else item.reject(normalizeError(data.error));
-  }
-
-  function rejectAllPending(error) {
-    pending.forEach((item) => {
-      window.clearTimeout(item.timeout);
-      item.reject(error);
-    });
-    pending.clear();
-    bridgeReady = false;
-    bridgePort = null;
-    readyPromise = null;
-  }
-
-  function isTrustedBridgeOrigin(origin) {
+  function isTrustedResponseOrigin(origin) {
     try {
       const url = new URL(origin);
       return url.protocol === 'https:' && (
-        url.origin === bridgeOrigin ||
         url.hostname === 'script.google.com' ||
         url.hostname === 'script.googleusercontent.com' ||
         url.hostname.endsWith('.script.googleusercontent.com')
@@ -148,43 +39,138 @@
     }
   }
 
-  function normalizeError(error) {
-    if (error instanceof Error) return error;
-    const message = typeof error === 'string' ? error : (error && error.message) || 'Error inesperado del servidor.';
-    const normalized = new Error(message);
-    if (error && error.code) normalized.code = error.code;
-    return normalized;
+  function cleanupRequest(requestId) {
+    const item = pending.get(requestId);
+    if (!item) return;
+
+    window.clearTimeout(item.timeout);
+    if (item.iframe && item.iframe.parentNode) item.iframe.parentNode.removeChild(item.iframe);
+    pending.delete(requestId);
+  }
+
+  function handleWindowMessage(event) {
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.type !== 'bridge-response-v2') return;
+    if (data.channel !== channel || !data.requestId) return;
+    if (!isTrustedResponseOrigin(event.origin)) return;
+
+    const item = pending.get(data.requestId);
+    if (!item) return;
+
+    cleanupRequest(data.requestId);
+
+    if (data.ok) item.resolve(data.result);
+    else item.reject(normalizeError(data.error));
+  }
+
+  window.addEventListener('message', handleWindowMessage);
+
+  function submitRequest(action, payload, token) {
+    if (!configured()) {
+      return Promise.reject(new Error('Debe configurar una URL /exec válida en assets/js/config.js.'));
+    }
+
+    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+    const frameName = `gas_response_${requestId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
+    return new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      iframe.name = frameName;
+      iframe.id = frameName;
+      iframe.title = 'Respuesta de Google Apps Script';
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.style.position = 'fixed';
+      iframe.style.width = '1px';
+      iframe.style.height = '1px';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      iframe.style.border = '0';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '-9999px';
+
+      const timeout = window.setTimeout(() => {
+        cleanupRequest(requestId);
+        reject(new Error(
+          'Google Apps Script no devolvió respuesta. Verifique que doPost(e) y BridgeResponse.html estén publicados, y que la implementación permita acceso a cualquier usuario.'
+        ));
+      }, Number(config.REQUEST_TIMEOUT_MS) || 120000);
+
+      pending.set(requestId, { resolve, reject, timeout, iframe });
+      document.body.appendChild(iframe);
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = config.BRIDGE_URL;
+      form.target = frameName;
+      form.enctype = 'application/x-www-form-urlencoded';
+      form.acceptCharset = 'UTF-8';
+      form.style.display = 'none';
+
+      const request = {
+        action: action,
+        payload: payload || {},
+        token: token || '',
+        requestId: requestId,
+        channel: channel,
+        clientVersion: '1.2.0'
+      };
+
+      const fields = {
+        request: JSON.stringify(request),
+        origin: window.location.origin,
+        channel: channel,
+        requestId: requestId
+      };
+
+      Object.keys(fields).forEach((name) => {
+        const input = document.createElement('textarea');
+        input.name = name;
+        input.value = fields[name];
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+
+      try {
+        form.submit();
+      } catch (error) {
+        cleanupRequest(requestId);
+        reject(normalizeError(error));
+      } finally {
+        window.setTimeout(() => {
+          if (form.parentNode) form.parentNode.removeChild(form);
+        }, 0);
+      }
+    });
+  }
+
+  function init() {
+    if (initialized) return Promise.resolve(true);
+    if (initPromise) return initPromise;
+
+    initPromise = submitRequest('__ping__', {
+      origin: window.location.origin,
+      uiVersion: config.UI_VERSION || '1.2.0'
+    }, '')
+      .then((result) => {
+        if (!result || result.connected !== true) {
+          throw new Error('Apps Script respondió, pero no confirmó la conexión.');
+        }
+        initialized = true;
+        return true;
+      })
+      .catch((error) => {
+        initPromise = null;
+        throw error;
+      });
+
+    return initPromise;
   }
 
   async function call(action, payload = {}, token = null) {
-    await init();
-    if (!bridgePort || !bridgeReady) throw new Error('El puente con Google Apps Script no está disponible.');
-
-    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-    return new Promise((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        pending.delete(requestId);
-        reject(new Error(`La operación “${action}” excedió el tiempo permitido.`));
-      }, config.REQUEST_TIMEOUT_MS);
-
-      pending.set(requestId, { resolve, reject, timeout });
-
-      try {
-        bridgePort.postMessage({
-          type: 'bridge-request',
-          requestId,
-          action,
-          payload,
-          token,
-          channel
-        });
-      } catch (error) {
-        window.clearTimeout(timeout);
-        pending.delete(requestId);
-        reject(normalizeError(error));
-      }
-    });
+    if (action !== '__ping__') await init();
+    return submitRequest(action, payload, token);
   }
 
   window.BackendAPI = {
