@@ -3,11 +3,11 @@
 
   const config = window.APP_CONFIG;
   const pending = new Map();
-  const channel = `${Date.now()}_${cryptoRandom_()}_${cryptoRandom_()}`;
+  const channel = `${Date.now()}_${randomId_()}_${randomId_()}`;
   let initialized = false;
   let initPromise = null;
 
-  function cryptoRandom_() {
+  function randomId_() {
     try {
       const values = new Uint32Array(4);
       window.crypto.getRandomValues(values);
@@ -28,31 +28,15 @@
 
   function normalizeError(error) {
     if (error instanceof Error) return error;
-    const message = typeof error === 'string'
-      ? error
-      : (error && error.message) || 'Error inesperado del servidor.';
-    const normalized = new Error(message);
+
+    const normalized = new Error(
+      typeof error === 'string'
+        ? error
+        : (error && error.message) || 'Error inesperado del servidor.'
+    );
+
     if (error && error.code) normalized.code = error.code;
     return normalized;
-  }
-
-  function isTrustedResponseOrigin(origin) {
-    // Apps Script normalmente responde desde script.googleusercontent.com.
-    // Algunos navegadores informan "null" para documentos HTML Service
-    // ejecutados dentro de un iframe sandbox. El canal y requestId aleatorios
-    // siguen impidiendo aceptar respuestas ajenas.
-    if (origin === 'null') return true;
-
-    try {
-      const url = new URL(origin);
-      return url.protocol === 'https:' && (
-        url.hostname === 'script.google.com' ||
-        url.hostname === 'script.googleusercontent.com' ||
-        url.hostname.endsWith('.script.googleusercontent.com')
-      );
-    } catch (error) {
-      return false;
-    }
   }
 
   function cleanupRequest(requestId) {
@@ -60,18 +44,23 @@
     if (!item) return;
 
     window.clearTimeout(item.timeout);
+
     if (item.iframe && item.iframe.parentNode) {
       item.iframe.parentNode.removeChild(item.iframe);
     }
+
     pending.delete(requestId);
   }
 
   function handleWindowMessage(event) {
+    // La respuesta final llega desde bridge-callback.html, alojado en el
+    // mismo origen que la aplicación de GitHub Pages.
+    if (event.origin !== window.location.origin) return;
+
     const data = event.data;
     if (!data || typeof data !== 'object') return;
-    if (data.type !== 'bridge-response-v3') return;
+    if (data.type !== 'bridge-response-v4') return;
     if (data.channel !== channel || !data.requestId) return;
-    if (!isTrustedResponseOrigin(event.origin)) return;
 
     const item = pending.get(data.requestId);
     if (!item) return;
@@ -94,8 +83,9 @@
       );
     }
 
-    const requestId = `${Date.now()}_${cryptoRandom_()}`;
+    const requestId = `${Date.now()}_${randomId_()}`;
     const frameName = `gas_response_${requestId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    const callbackUrl = new URL('./bridge-callback.html', document.baseURI).href;
 
     return new Promise((resolve, reject) => {
       const iframe = document.createElement('iframe');
@@ -115,9 +105,9 @@
       const timeout = window.setTimeout(() => {
         cleanupRequest(requestId);
         reject(new Error(
-          'La URL /exec no ejecutó el backend 1.3.0. Abra la URL /exec directamente y compruebe que muestre "Backend activo", versión 1.3.0 y origin_allowed: true.'
+          'Apps Script recibió la solicitud, pero no pudo regresar la respuesta a GitHub Pages. Verifique que bridge-callback.html esté publicado y que Conexion.gs/BridgeResponse.html sean la versión 1.4.0.'
         ));
-      }, Number(config.REQUEST_TIMEOUT_MS) || 120000);
+      }, Number(config.REQUEST_TIMEOUT_MS) || 60000);
 
       pending.set(requestId, { resolve, reject, timeout, iframe });
       document.body.appendChild(iframe);
@@ -136,18 +126,20 @@
         token: token || '',
         requestId: requestId,
         channel: channel,
-        clientVersion: '1.3.2'
+        clientVersion: '1.4.0'
       };
 
       const fields = {
         request: JSON.stringify(request),
         origin: window.location.origin,
         bridgeChannel: channel,
-        requestId: requestId
+        requestId: requestId,
+        callbackUrl: callbackUrl
       };
 
       Object.keys(fields).forEach((name) => {
-        const input = document.createElement('textarea');
+        const input = document.createElement('input');
+        input.type = 'hidden';
         input.name = name;
         input.value = fields[name];
         form.appendChild(input);
@@ -174,12 +166,13 @@
 
     initPromise = submitRequest('__ping__', {
       origin: window.location.origin,
-      uiVersion: config.UI_VERSION || '1.3.0'
+      uiVersion: config.UI_VERSION || '1.4.0'
     }, '')
       .then((result) => {
         if (!result || result.connected !== true) {
           throw new Error('Apps Script respondió, pero no confirmó la conexión.');
         }
+
         initialized = true;
         return true;
       })

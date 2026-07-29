@@ -1,0 +1,2 @@
+Suba el CONTENIDO de esta carpeta a la raíz de la rama main.
+bridge-callback.html es obligatorio.

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Respuesta del sistema</title>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+
+  const prefix = 'CONTROL_INV_BRIDGE_V4:';
+  const raw = String(window.name || '');
+
+  // Limpiar inmediatamente para no conservar información en el iframe.
+  window.name = '';
+
+  try {
+    if (!raw.startsWith(prefix)) {
+      throw new Error('La respuesta del backend no contiene el formato esperado.');
+    }
+
+    const message = JSON.parse(raw.slice(prefix.length));
+    window.parent.postMessage(message, window.location.origin);
+  } catch (error) {
+    window.parent.postMessage({
+      type: 'bridge-callback-error-v4',
+      message: error && error.message
+        ? error.message
+        : 'No se pudo interpretar la respuesta de Apps Script.'
+    }, window.location.origin);
+  }
+})();
+</script>
+</body>
+</html>

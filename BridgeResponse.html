@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_self">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Respuesta del sistema</title>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+
+  const callbackUrl = <?!= JSON.stringify(callbackUrl) ?>;
+  const bridgeChannel = <?!= JSON.stringify(bridgeChannel) ?>;
+  const requestId = <?!= JSON.stringify(requestId) ?>;
+  const envelope = <?!= JSON.stringify(envelope) ?>;
+
+  const message = {
+    type: 'bridge-response-v4',
+    channel: bridgeChannel,
+    requestId: requestId,
+    ok: Boolean(envelope && envelope.ok),
+    result: envelope && envelope.result,
+    error: envelope && envelope.error,
+    backendVersion: '1.4.0'
+  };
+
+  try {
+    // window.name permanece disponible después de navegar el mismo iframe.
+    // La página de retorno pertenece a GitHub Pages y entrega el mensaje al padre.
+    window.name =
+      'CONTROL_INV_BRIDGE_V4:' +
+      JSON.stringify(message);
+
+    window.location.replace(callbackUrl);
+  } catch (error) {
+    document.body.textContent =
+      'No fue posible devolver la respuesta a GitHub Pages: ' +
+      (error && error.message ? error.message : 'error desconocido');
+  }
+})();
+</script>
+</body>
+</html>
