@@ -10,7 +10,7 @@ window.APP_CONFIG = Object.freeze({
   GITHUB_ORIGIN: window.location.origin,
 
   MAX_FILE_SIZE_MB: 8,
-  REQUEST_TIMEOUT_MS: 60000,
+  REQUEST_TIMEOUT_MS: 120000,
   SESSION_STORAGE_KEY: 'research_control_session_v1',
-  UI_VERSION: '1.4.0'
+  UI_VERSION: '1.5.0'
 });

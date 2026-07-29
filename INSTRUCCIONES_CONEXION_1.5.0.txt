@@ -1,0 +1,65 @@
+CORRECCIÓN FINAL DE TRANSPORTE — VERSIÓN 1.5.0
+
+CAUSA CONFIRMADA
+La versión 1.4.0 envió correctamente el POST, pero el entorno aislado de
+Google Apps Script no permitió devolver la respuesta mediante window.name.
+
+La versión 1.5.0 no utiliza:
+- postMessage desde Apps Script
+- MessageChannel
+- window.name
+- bridge-callback.html
+
+Usa:
+1. Formulario POST oculto para enviar la operación.
+2. CacheService para guardar temporalmente el resultado.
+3. JSONP para recuperar el resultado desde la misma URL /exec.
+
+GOOGLE APPS SCRIPT
+
+1. Abra Conexion.gs.
+2. Reemplace TODO su contenido por Conexion.gs de este paquete.
+3. Abra Código.gs.
+4. Elimine únicamente la función doGet(e) actual.
+5. Pegue en su lugar el contenido de doGet-reemplazo.gs:
+
+   function doGet(e) {
+     return handleBridgeGet(e);
+   }
+
+6. BridgeResponse.html y Bridge.html pueden permanecer, pero ya no se utilizan.
+7. Guarde.
+8. Ejecute testBackendConnection.
+9. Debe mostrar:
+   - success: true
+   - backendVersion: 1.5.0
+   - transport: POST + JSONP polling
+   - cacheResponseStored: true
+10. Implemente una NUEVA VERSIÓN de la implementación activa.
+11. Mantenga:
+    - Ejecutar como: Yo
+    - Acceso: Cualquier usuario
+
+PRUEBA DEL BACKEND
+
+Abra:
+URL_EXEC?origin=https%3A%2F%2Fgrupoqueyam-cloud.github.io
+
+Debe mostrar:
+- Backend activo
+- backend_version: 1.5.0
+- transport: POST + JSONP polling
+- origin_allowed: true
+
+GITHUB PAGES
+
+1. Suba el contenido de Control_Inv_GITHUB_1.5.0.zip a la raíz.
+2. Confirme:
+   https://grupoqueyam-cloud.github.io/Control_Inv/assets/js/config.js
+   Debe mostrar UI_VERSION: '1.5.0'.
+3. Presione Ctrl+Shift+R.
+4. En consola ejecute:
+   await window.BackendAPI.init()
+5. Debe devolver true.
+
+bridge-callback.html ya no es necesario. Puede quedar publicado sin afectar.

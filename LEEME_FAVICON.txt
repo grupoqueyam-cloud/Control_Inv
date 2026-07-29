@@ -1,0 +1,2 @@
+Suba favicon.ico, index.html y 404.html a la raíz del repositorio.
+Luego espere la publicación de GitHub Pages y presione Ctrl+F5.

@@ -1,0 +1,35 @@
+CORRECCIÓN DE TRANSPORTE 1.4.0
+
+La prueba interna 1.3.2 confirmó que Sheets, Drive y BridgeResponse funcionan.
+El bloqueo restante ocurre al devolver directamente postMessage desde el
+iframe aislado de Google Apps Script.
+
+La versión 1.4.0 usa este recorrido:
+
+GitHub -> formulario POST -> Apps Script -> window.name ->
+bridge-callback.html (GitHub) -> postMessage al sistema.
+
+APPS SCRIPT
+1. Abra Conexion.gs.
+2. Reemplace TODO su contenido por Conexion.gs de este paquete.
+3. Abra BridgeResponse.html.
+4. Reemplace TODO su contenido por BridgeResponse.html de este paquete.
+5. Guarde.
+6. Ejecute testBackendConnection.
+7. Debe mostrar backendVersion 1.4.0 y success true.
+8. Implemente una NUEVA VERSIÓN de la implementación activa.
+9. Mantenga ejecutar como Yo y acceso Cualquier usuario.
+
+GITHUB PAGES
+1. Suba todos los archivos del paquete de GitHub a la raíz del repositorio.
+2. Es indispensable que exista:
+   /Control_Inv/bridge-callback.html
+3. Abra:
+   https://grupoqueyam-cloud.github.io/Control_Inv/bridge-callback.html
+   Debe mostrarse una página vacía, sin error 404.
+4. Fuerce recarga con Ctrl+Shift+R.
+5. En la consola ejecute:
+   await window.BackendAPI.init()
+6. Debe devolver true.
+
+No modifique nuevamente SPREADSHEET_ID, ROOT_FOLDER_ID ni ALLOWED_ORIGINS.
